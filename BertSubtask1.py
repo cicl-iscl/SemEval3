@@ -1,7 +1,8 @@
-import bert
 import csv
+import tensorflow as tf
+import tensorflow_hub as hub
+import tensorflow_text as text
 
-from bert import run_classifier
 from sklearn.model_selection import train_test_split
 
 
@@ -38,25 +39,25 @@ def load_subtask1_data(language):
     return x_train, x_test, y_train, y_test
 
 
-def create_input_examples(x, y):
-    """
-    Creates BERT InputExamples from list data.
-
-    :param x: A list of sentences
-    :param y: A list of labels corresponding to the sentences
-    :return:
-    """
-    input_examples = []
-    for i in range(len(x)):
-        input_examples.append(bert.run_classifier.InputExample(guid=None, text_a=x[i], text_b=None, label=y[i]))
-    return input_examples
+def build_model():
+    text_input = tf.keras.layers.Input(shape=(), dtype=tf.string, name='text')
+    preprocessing_layer = hub.KerasLayer("https://tfhub.dev/tensorflow/bert_en_cased_preprocess/3",
+                                         name="preprocessing")
+    encoder_inputs = preprocessing_layer(text_input)
+    encoder = hub.KerasLayer("https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/3", name="BERT")
+    outputs = encoder(encoder_inputs)
+    net = outputs['pooled_output']
+    net = tf.keras.layers.Dropout(0.1)(net)
+    net = tf.keras.layers.Dense(1, activation=None, name='classifier')(net)
+    return tf.keras.Model(text_input, net)
 
 
 if __name__ == "__main__":
+    # ENGLISH
     # Load English language data
     en_X_train, en_X_test, en_y_train, en_y_test = load_subtask1_data("en")
-    en_train_InputExamples = create_input_examples(en_X_train, en_y_train)
-    en_test_InputExamples = create_input_examples(en_X_test, en_y_test)
+    classifier = build_model()
+    classifier.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 
     # Load French language data
     fr_X_train, fr_X_test, fr_y_train, fr_y_test = load_subtask1_data("fr")
