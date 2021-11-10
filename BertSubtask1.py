@@ -4,9 +4,10 @@ import tensorflow_hub as hub
 import tensorflow_text as text
 
 from sklearn.model_selection import train_test_split
+from typing import List, Tuple
 
 
-def read_binary_label_data(filename, sentences, labels):
+def read_binary_label_data(filename: str, sentences: List[str], labels: List[int]):
     """
     Adds the data from the given filename to the lists of sentences and labels.
 
@@ -22,7 +23,7 @@ def read_binary_label_data(filename, sentences, labels):
             labels.append(int(row[2]))
 
 
-def load_subtask1_data(language):
+def load_subtask1_data(language: str) -> Tuple[List[str], List[int], List[str], List[int]]:
     """
     Loads the data from the subtask1 train file and returns shuffled train and test split.
 
@@ -39,12 +40,18 @@ def load_subtask1_data(language):
     return x_train, x_test, y_train, y_test
 
 
-def build_model():
+def build_model(preprocessor: str, bert: str):
+    """
+    Builds a binary classifier based on the pretrained models.
+
+    :param preprocessor: Path to the pretrained BERT preprocessor
+    :param bert: Path to the pretrained BERT language model
+    :return: Binary classifier
+    """
     text_input = tf.keras.layers.Input(shape=(), dtype=tf.string, name='text')
-    preprocessing_layer = hub.KerasLayer("https://tfhub.dev/tensorflow/bert_en_cased_preprocess/3",
-                                         name="preprocessing")
+    preprocessing_layer = hub.KerasLayer(preprocessor, name="preprocessor")
     encoder_inputs = preprocessing_layer(text_input)
-    encoder = hub.KerasLayer("https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/3", name="BERT")
+    encoder = hub.KerasLayer(bert, name="BERT")
     outputs = encoder(encoder_inputs)
     net = outputs['pooled_output']
     net = tf.keras.layers.Dropout(0.1)(net)
@@ -54,10 +61,11 @@ def build_model():
 
 if __name__ == "__main__":
     # ENGLISH
-    # Load English language data
     en_X_train, en_X_test, en_y_train, en_y_test = load_subtask1_data("en")
-    classifier = build_model()
+    classifier = build_model("https://tfhub.dev/tensorflow/bert_en_cased_preprocess/3",
+                             "https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/3")
     classifier.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+    # classifier.fit()
 
     # Load French language data
     fr_X_train, fr_X_test, fr_y_train, fr_y_test = load_subtask1_data("fr")
