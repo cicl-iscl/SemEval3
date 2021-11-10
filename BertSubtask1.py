@@ -1,4 +1,7 @@
+import bert
 import csv
+
+from bert import run_classifier
 from sklearn.model_selection import train_test_split
 
 
@@ -18,28 +21,45 @@ def read_binary_label_data(filename, sentences, labels):
             labels.append(int(row[2]))
 
 
-if __name__ == "__main__":
+def load_subtask1_data(language):
+    """
+    Loads the data from the subtask1 train file and returns shuffled train and test split.
 
-    # Load English language data
-    en_sentences = []
-    en_labels = []
+    :param language: Language to load the data for
+    :return: A tuple (x_train, x_test, y_train, y_test) that contains the data shuffled and split in train and test
+    """
+    sentences = []
+    labels = []
     for i in range(3):
-        read_binary_label_data(f"data/train/train_subtask-1/en/En-Subtask1-fold_{i}.tsv", en_sentences, en_labels)
-    en_X_train, en_X_test = train_test_split(en_sentences, random_state=0)
-    en_y_train, en_y_test = train_test_split(en_labels, random_state=0)
+        read_binary_label_data(f"data/train/train_subtask-1/{language}/{language.capitalize()}-Subtask1-fold_{i}.tsv",
+                               sentences, labels)
+    x_train, x_test = train_test_split(sentences, random_state=0)
+    y_train, y_test = train_test_split(labels, random_state=0)
+    return x_train, x_test, y_train, y_test
+
+
+def create_input_examples(x, y):
+    """
+    Creates BERT InputExamples from list data.
+
+    :param x: A list of sentences
+    :param y: A list of labels corresponding to the sentences
+    :return:
+    """
+    input_examples = []
+    for i in range(len(x)):
+        input_examples.append(bert.run_classifier.InputExample(guid=None, text_a=x[i], text_b=None, label=y[i]))
+    return input_examples
+
+
+if __name__ == "__main__":
+    # Load English language data
+    en_X_train, en_X_test, en_y_train, en_y_test = load_subtask1_data("en")
+    en_train_InputExamples = create_input_examples(en_X_train, en_y_train)
+    en_test_InputExamples = create_input_examples(en_X_test, en_y_test)
 
     # Load French language data
-    fr_sentences = []
-    fr_labels = []
-    for i in range(3):
-        read_binary_label_data(f"data/train/train_subtask-1/fr/Fr-Subtask1-fold_{i}.tsv", fr_sentences, fr_labels)
-    fr_X_train, fr_X_test = train_test_split(fr_sentences, random_state=1)
-    fr_y_train, fr_y_test = train_test_split(fr_labels, random_state=1)
+    fr_X_train, fr_X_test, fr_y_train, fr_y_test = load_subtask1_data("fr")
 
     # Load Italian language data
-    it_sentences = []
-    it_labels = []
-    for i in range(3):
-        read_binary_label_data(f"data/train/train_subtask-1/it/It-Subtask1-fold_{i}.tsv", it_sentences, it_labels)
-    it_X_train, it_X_test = train_test_split(it_sentences, random_state=2)
-    it_y_train, it_y_test = train_test_split(it_labels, random_state=2)
+    it_X_train, it_X_test, it_y_train, it_y_test = load_subtask1_data("it")
