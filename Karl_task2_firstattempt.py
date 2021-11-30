@@ -13,13 +13,13 @@ import transformers
 from transformers import AutoModel, BertTokenizerFast
 import torch
 import torch.nn as nn
-from sklearn.metrics import classification_report
+from sklearn.metrics import explained_variance_score, mean_squared_error
 from transformers import AdamW, CamembertTokenizer
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 
 
 
-from Karl_bert_firstattempt_Model import BERT_Arch
+from Karl_bert_firstattempt_Model_task2 import BERT_Arch
 
 # specify GPU
 device = torch.device("cuda")
@@ -91,7 +91,7 @@ device = torch.device("cuda")
 
 
 # define the loss function
-cross_entropy  = nn.CrossEntropyLoss() 
+MSE  = nn.MSELoss() 
 
 # number of training epochs
 epochs = 10
@@ -127,8 +127,8 @@ def train(train_dataloader, model, optimizer):
 
     # compute the loss between actual and predicted values
     #print(labels)
-    #print(preds.size())
-    loss = cross_entropy(preds, labels)
+    #print(preds)
+    loss = MSE(preds, labels)
 
     # add on to the total loss
     total_loss = total_loss + loss.item()
@@ -162,14 +162,14 @@ def train(train_dataloader, model, optimizer):
 
 
 for lang in ("fr", "it", "en"):
-    for i in range(0,3):
+    for i in range(0,2):
         torch.cuda.empty_cache() 
-        basedata = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str((i-1)%3) +".tsv", sep ='\t', )
-        basedata2 = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str((i-2)%3) +".tsv", sep ='\t', )
-        basedata = basedata.append(basedata2)
+        basedata = pd.read_csv("./data/train/train_subtask-2/"+ lang +"/"+ lang +"-Subtask2-fold_"+ str((i-1)%2) +".tsv", sep ='\t', )
+        #basedata2 = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str((i-2)%3) +".tsv", sep ='\t', )
+        #basedata = basedata.append(basedata2)
         print(basedata.head())
         print(np.shape(basedata))
-        testdata = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str(i) +".tsv", sep ='\t', )
+        testdata = pd.read_csv("./data/train/train_subtask-2/"+ lang +"/"+ lang +"-Subtask2-fold_"+ str(i) +".tsv", sep ='\t', )
         print(testdata.head())
         print(np.shape(testdata))
         
@@ -203,11 +203,11 @@ for lang in ("fr", "it", "en"):
         #creating the tensors
         train_seq = torch.tensor(tokens_train['input_ids'])
         train_mask = torch.tensor(tokens_train['attention_mask'])
-        train_y = torch.tensor(basedata.Labels.tolist())
+        train_y = torch.tensor(basedata.Score.tolist())
 
         test_seq = torch.tensor(tokens_test['input_ids'])
         test_mask = torch.tensor(tokens_test['attention_mask'])
-        test_y = torch.tensor(testdata.Labels.tolist())
+        test_y = torch.tensor(testdata.Score.tolist())
 
         #define a batch size
         batch_size = 32
@@ -261,8 +261,9 @@ for lang in ("fr", "it", "en"):
             preds_test = model(test_seq.to(device), test_mask.to(device))
             preds_test = preds_test.detach().cpu().numpy()
   
-        preds_test = np.argmax(preds_test, axis = 1)
-        print(classification_report(test_y, preds_test))
+        preds_test = preds_test
+        print(mean_squared_error(test_y, preds_test))
+        print(explained_variance_score(test_y, preds_test))
         
 
 
