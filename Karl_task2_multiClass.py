@@ -13,29 +13,29 @@ import transformers
 from transformers import AutoModel, BertTokenizerFast
 import torch
 import torch.nn as nn
-from sklearn.metrics import classification_report, accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import explained_variance_score, mean_squared_error
 from scipy import stats
 from transformers import AdamW, CamembertTokenizer
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
-from baseline.utils import get_train_dev, compute_metrics_task1, process_eval_jsons_task1
 
 
 
-from Karl_bert_firstattempt_Model import BERT_Arch
+from Karl_bert_Multiclass_Model_task2 import BERT_Arch
 
 # specify GPU
 device = torch.device("cuda")
 
 
-EPOCHS_EN = 30
-EPOCHS_FR = 30
-EPOCHS_IT = 30
+
+EPOCHS = 10
+EPOCHS_EN = 150
+EPOCHS_FR = 150
+EPOCHS_IT = 150
 LEARNINGRATE = 1e-5
 
 MAXLENGTH_EN = 15
 MAXLENGTH_FR = 20
 MAXLENGTH_IT = 15
-
 
 
 
@@ -109,10 +109,10 @@ MAXLENGTH_IT = 15
 
 
 # define the loss function
-cross_entropy  = nn.CrossEntropyLoss() 
+MSE  = nn.CrossEntropyLoss()
 
 # number of training epochs
-epochs = EPOCHS_EN
+epochs = EPOCHS
 
 # function to train the model
 def train(train_dataloader, model, optimizer):
@@ -145,8 +145,14 @@ def train(train_dataloader, model, optimizer):
 
     # compute the loss between actual and predicted values
     #print(labels)
-    #print(preds.size())
-    loss = cross_entropy(preds, labels)
+    #print(preds)
+    labels.to('cpu')
+    labels = torch.round(labels)
+    labels = labels.long()
+    labels.to(device)
+    labels = labels - 1
+    #print(labels)
+    loss = MSE(preds, labels)
 
     # add on to the total loss
     total_loss = total_loss + loss.item()
@@ -180,18 +186,16 @@ def train(train_dataloader, model, optimizer):
 
 
 for lang in ("fr", "it", "en"):
-    outputstorage = np.zeros((3,5))
-    for i in range(0,3):
-        
-        
-        
+    outputstorage = np.zeros((2,3))
+    torch.cuda.empty_cache() 
+    for i in range(0,2):
         torch.cuda.empty_cache() 
-        basedata = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str((i-1)%3) +".tsv", sep ='\t', )
-        basedata2 = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str((i-2)%3) +".tsv", sep ='\t', )
-        basedata = basedata.append(basedata2)
+        basedata = pd.read_csv("./data/train/train_subtask-2/"+ lang +"/"+ lang +"-Subtask2-fold_"+ str((i-1)%2) +".tsv", sep ='\t', )
+        #basedata2 = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str((i-2)%3) +".tsv", sep ='\t', )
+        #basedata = basedata.append(basedata2)
         print(basedata.head())
         print(np.shape(basedata))
-        testdata = pd.read_csv("./data/train/train_subtask-1/"+ lang +"/"+ lang +"-Subtask1-fold_"+ str(i) +".tsv", sep ='\t', )
+        testdata = pd.read_csv("./data/train/train_subtask-2/"+ lang +"/"+ lang +"-Subtask2-fold_"+ str(i) +".tsv", sep ='\t', )
         print(testdata.head())
         print(np.shape(testdata))
         
@@ -231,11 +235,11 @@ for lang in ("fr", "it", "en"):
         #creating the tensors
         train_seq = torch.tensor(tokens_train['input_ids'])
         train_mask = torch.tensor(tokens_train['attention_mask'])
-        train_y = torch.tensor(basedata.Labels.tolist())
+        train_y = torch.tensor(basedata.Score.tolist())
 
         test_seq = torch.tensor(tokens_test['input_ids'])
         test_mask = torch.tensor(tokens_test['attention_mask'])
-        test_y = torch.tensor(testdata.Labels.tolist())
+        test_y = torch.tensor(testdata.Score.tolist())
 
         #define a batch size
         batch_size = 32
@@ -289,32 +293,28 @@ for lang in ("fr", "it", "en"):
         with torch.no_grad():
             model.eval()
             preds_test = model(test_seq.to(device), test_mask.to(device))
-            preds_test = preds_test.detach().cpu().numpy()
-  
-        preds_test = np.argmax(preds_test, axis = 1)
+            preds_test = preds_test.detach().cpu()
+            preds_test = torch.argmax(preds_test, dim = 1).numpy()
+            preds_test = preds_test + 1
+            #print(preds_test)
+            #print(test_y)
+            
+        mse  = mean_squared_error(test_y, preds_test)
+        rmse = mean_squared_error(test_y, preds_test, squared = False)
+        rho, pval = stats.spearmanr(test_y, preds_test)
         
-        accuracy = accuracy_score(test_y, preds_test)
-        precision = precision_score(test_y, preds_test)
-        recall = recall_score(test_y, preds_test)
-        f1 = f1_score(test_y, preds_test, average= 'binary')
-        f1macro = f1_score(test_y, preds_test, average= 'macro')
-        
-        
-        outputstorage[i,0] = accuracy
-        outputstorage[i,1] = precision
-        outputstorage[i,2] = recall
-        outputstorage[i,3] = f1
-        outputstorage[i,4] = f1macro
-        
-        if i == 2:
-            df = pd.DataFrame(outputstorage)
-            df.to_csv("./hyperparam/subtask1/"+ lang +"/epochs" + str(epochs) + "_lr" + str(LEARNINGRATE) + "_2layer_512neurons" )
-        
+        outputstorage[i,0] = mse
+        outputstorage[i,1] = rmse
+        outputstorage[i,2] = rho
         
         print(outputstorage)
-        #df = pd.DataFrame(report)
-        #df.to_csv("dummy")
-        #print(df)
+        if i == 1:
+            df = pd.DataFrame(outputstorage)
+            df.to_csv("./hyperparam/subtask2/"+ lang +"/epochs" + str(epochs) + "_lr" + str(LEARNINGRATE) + "_2layer_512neurons_MULTICLASS" )
+  
+        preds_test = preds_test
+        #print(mean_squared_error(test_y, preds_test))
+        #print(explained_variance_score(test_y, preds_test))
         
 
 

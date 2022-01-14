@@ -32,6 +32,9 @@ class BERT_Arch(nn.Module):
       # dense layer 1
       self.fc1 = nn.Linear(768,512)
       
+      #optinal layer
+      self.fc3 = nn.Linear(512,512)
+      
       # dense layer 2 (Output layer)
       self.fc2 = nn.Linear(512,2)
 
@@ -49,6 +52,13 @@ class BERT_Arch(nn.Module):
 
       x = self.relu(x)
 
+      x = self.dropout(x)
+      
+      x = self.fc3(x)
+      
+      x = self.relu(x)
+      
+      
       x = self.dropout(x)
 
       # output layer

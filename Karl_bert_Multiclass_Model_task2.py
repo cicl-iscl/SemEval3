@@ -24,28 +24,19 @@ class BERT_Arch(nn.Module):
       self.bert = bert 
       
       # dropout layer
-      self.dropout = nn.Dropout(0.2)
+      self.dropout = nn.Dropout(0.1)
       
       # relu activation function
-      self.relu =  nn.Tanh()
+      self.relu =  nn.ReLU()
 
       # dense layer 1
-      self.fc1 = nn.Linear(768,16)
+      self.fc1 = nn.Linear(768,512)
       
-      #optinal
+      # optional
       self.fc3 = nn.Linear(512,512)
       
-      #optinal
-      self.fc4 = nn.Linear(512,512)
-      
-      #optinal
-      self.fc5 = nn.Linear(2048,2048)
-      
-      #optinal
-      self.fc6 = nn.Linear(2048,2048)
-      
       # dense layer 2 (Output layer)
-      self.fc2 = nn.Linear(16,1, bias = True)
+      self.fc2 = nn.Linear(512,7)
 
       #softmax activation function
       self.softmax = nn.LogSoftmax(dim=1)
@@ -63,36 +54,14 @@ class BERT_Arch(nn.Module):
 
       x = self.dropout(x)
       
-      #x = self.fc3(x)
-      
-      #x = self.relu(x)
-      
-      #x = self.dropout(x)
-      
-      #x = self.fc4(x)
-      
-      #x = self.relu(x)
-      
-      #x = self.dropout(x)
-      
-      #x = self.fc5(x)
-      
-      #x = self.relu(x)
-      
-      #x = self.dropout(x)
-      
-      #x = self.fc6(x)
-      
-      #x = self.relu(x)
-      
-      #x = self.dropout(x)
+      x = self.fc3(x)
+
+      x = self.relu(x)
+
+      x = self.dropout(x)
 
       # output layer
       x = self.fc2(x)
-      
-     
-      
-      
       return x
   
     

@@ -14,6 +14,7 @@ from transformers import AutoModel, BertTokenizerFast
 import torch
 import torch.nn as nn
 from sklearn.metrics import explained_variance_score, mean_squared_error
+from scipy import stats
 from transformers import AdamW, CamembertTokenizer
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 
@@ -23,6 +24,23 @@ from Karl_bert_firstattempt_Model_task2 import BERT_Arch
 
 # specify GPU
 device = torch.device("cuda")
+
+
+
+EPOCHS = 10
+EPOCHS_EN = 20
+EPOCHS_FR = 100
+EPOCHS_IT = 50
+LEARNINGRATE =  1e-5
+
+MAXLENGTH_EN = 15
+MAXLENGTH_FR = 20
+MAXLENGTH_IT = 15
+
+
+
+
+
 
 #This code is based on the tutorial at: https://www.analyticsvidhya.com/blog/2020/07/transfer-learning-for-nlp-fine-tuning-bert-for-text-classification/
 
@@ -94,7 +112,7 @@ device = torch.device("cuda")
 MSE  = nn.MSELoss() 
 
 # number of training epochs
-epochs = 10
+epochs = EPOCHS
 
 # function to train the model
 def train(train_dataloader, model, optimizer):
@@ -117,7 +135,11 @@ def train(train_dataloader, model, optimizer):
     batch = [r.to(device) for r in batch]
  
     sent_id, mask, labels = batch
-
+    
+    labels = (labels-1)/6
+    labels = labels.reshape((labels.size(dim =0),1))
+    #print(labels)
+    #print(labels)
     # clear previously calculated gradients 
     model.zero_grad()        
 
@@ -137,7 +159,7 @@ def train(train_dataloader, model, optimizer):
     loss.backward()
 
     # clip the the gradients to 1.0. It helps in preventing the exploding gradient problem
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    #torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
     # update parameters
     optimizer.step()
@@ -161,7 +183,9 @@ def train(train_dataloader, model, optimizer):
 
 
 
-for lang in ("fr", "it", "en"):
+for lang in ("en", "it", "fr"):
+    torch.cuda.empty_cache() 
+    outputstorage = np.zeros((2,3))
     for i in range(0,2):
         torch.cuda.empty_cache() 
         basedata = pd.read_csv("./data/train/train_subtask-2/"+ lang +"/"+ lang +"-Subtask2-fold_"+ str((i-1)%2) +".tsv", sep ='\t', )
@@ -177,25 +201,34 @@ for lang in ("fr", "it", "en"):
         if(lang == "en"):
             bert = AutoModel.from_pretrained('bert-base-uncased')
             tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
+            maxlength = MAXLENGTH_EN
+            epochs = EPOCHS_EN
         elif(lang == "fr"):
             bert = AutoModel.from_pretrained('camembert-base')
             tokenizer = CamembertTokenizer.from_pretrained('camembert-base')
+            maxlength = MAXLENGTH_FR
+            epochs = EPOCHS_FR
         elif(lang == "it"):
             bert = AutoModel.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
             tokenizer = BertTokenizerFast.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
+            maxlength = MAXLENGTH_IT
+            epochs = EPOCHS_IT
         
             
+    
+      
+    
         #running the tokenizer
         tokens_train = tokenizer.batch_encode_plus(
             basedata.Sentence.tolist(),
-            max_length = 15,
+            max_length = maxlength,
             padding = 'max_length',
             truncation=True
         )
 
         tokens_test = tokenizer.batch_encode_plus(
             testdata.Sentence.tolist(),
-            max_length = 15,
+            max_length = maxlength,
             padding = 'max_length',
             truncation=True
         )
@@ -222,8 +255,9 @@ for lang in ("fr", "it", "en"):
         #creating the model and pushing it to gpu
         model = BERT_Arch(bert)
         model = model.to(device)
+        model.train()
         
-        optimizer = AdamW(model.parameters(), lr = 1e-5)  
+        optimizer = AdamW(model.parameters(), lr = LEARNINGRATE)  
 
 
         # set initial loss to infinite
@@ -258,12 +292,30 @@ for lang in ("fr", "it", "en"):
     
 
         with torch.no_grad():
+            model.eval()
             preds_test = model(test_seq.to(device), test_mask.to(device))
             preds_test = preds_test.detach().cpu().numpy()
+            preds_test = (preds_test *6) +1
+            print(preds_test)
+        mse  = mean_squared_error(test_y, preds_test)
+        rmse = mean_squared_error(test_y, preds_test, squared = False)
+        rho, pval = stats.spearmanr(test_y, preds_test)
+        
+        outputstorage[i,0] = mse
+        outputstorage[i,1] = rmse
+        outputstorage[i,2] = rho
+        
+        
+        if i == 1:
+            df = pd.DataFrame(outputstorage)
+            #df.to_csv("./hyperparam/subtask2/"+ lang +"/epochs" + str(epochs) + "_lr" + str(LEARNINGRATE) + "_1layer_64neurons_TANH" )
+        
+        
+        print(outputstorage)
   
         preds_test = preds_test
-        print(mean_squared_error(test_y, preds_test))
-        print(explained_variance_score(test_y, preds_test))
+        #print(mean_squared_error(test_y, preds_test))
+       # print(explained_variance_score(test_y, preds_test))
         
 
 
