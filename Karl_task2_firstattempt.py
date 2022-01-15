@@ -174,11 +174,9 @@ def train(train_dataloader, model, optimizer):
 
 for lang in ("en", "it", "fr"):
     torch.cuda.empty_cache()
-    outputstorage = np.zeros((2, 3))
-    torch.cuda.empty_cache()
     data = pd.concat([pd.read_csv(f"data/train/train_subtask-2/{lang}/{lang.capitalize()}-Subtask2-fold_{i}.tsv",
                                   sep="\t") for i in range(2)])
-    basedata, testdata = train_test_split(data, test_size=0.2)
+    basedata, testdata = train_test_split(data, test_size=0.3)
     print(basedata.head())
     print(np.shape(basedata))
     print(testdata.head())
