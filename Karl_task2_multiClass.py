@@ -5,29 +5,25 @@ Created on Tue Nov  9 10:25:50 2021
 @author: karl vetter
 """
 
-import os, sys, time
 import pandas as pd
 import numpy as np
-import transformers
 from transformers import AutoModel, BertTokenizerFast
 import torch
 import torch.nn as nn
-from sklearn.metrics import explained_variance_score, mean_squared_error
+from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 from scipy import stats
 from transformers import AdamW, CamembertTokenizer
-from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
 from Karl_bert_Multiclass_Model_task2 import BERT_Arch
 
 # specify GPU
 device = torch.device("cuda")
 
-EPOCHS = 10
-EPOCHS_EN = 150
-EPOCHS_FR = 150
-EPOCHS_IT = 150
+EPOCHS = 100
 LEARNINGRATE = 1e-5
+PATIENCE = 5
 
 MAXLENGTH_EN = 15
 MAXLENGTH_FR = 20
@@ -174,6 +170,28 @@ def train(train_dataloader, model, optimizer):
     return avg_loss, total_preds
 
 
+def validate(test_dataloader, model):
+    model.eval()
+    total_loss, total_accuracy = 0, 0
+    total_preds = []
+    with torch.no_grad():
+        for step, batch in enumerate(test_dataloader):
+            batch = [r.to(device) for r in batch]
+            sent_id, mask, labels = batch
+            labels = torch.round(labels)
+            labels = labels.long()
+            labels.to(device)
+            labels = labels - 1
+            preds = model(sent_id, mask)
+            loss = MSE(preds, labels)
+            total_loss = total_loss + loss.item()
+            preds = preds.detach().cpu().numpy()
+            total_preds.append(preds)
+        avg_loss = total_loss / len(train_dataloader)
+        total_preds = np.concatenate(total_preds, axis=0)
+    return avg_loss, total_preds
+
+
 for lang in ("fr", "it", "en"):
     torch.cuda.empty_cache()
     data = pd.concat([pd.read_csv(f"data/train/train_subtask-2/{lang}/{lang.capitalize()}-Subtask2-fold_{i}.tsv",
@@ -185,21 +203,18 @@ for lang in ("fr", "it", "en"):
     print(np.shape(testdata))
 
     # loading the pretrained bert model and tokenizer
-    if (lang == "en"):
+    if lang == "en":
         bert = AutoModel.from_pretrained('bert-base-uncased')
         tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
         maxlength = MAXLENGTH_EN
-        epochs = EPOCHS_EN
-    elif (lang == "fr"):
+    elif lang == "fr":
         bert = AutoModel.from_pretrained('camembert-base')
         tokenizer = CamembertTokenizer.from_pretrained('camembert-base')
         maxlength = MAXLENGTH_FR
-        epochs = EPOCHS_FR
-    elif (lang == "it"):
+    elif lang == "it":
         bert = AutoModel.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
         tokenizer = BertTokenizerFast.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
         maxlength = MAXLENGTH_IT
-        epochs = EPOCHS_IT
 
     # running the tokenizer
     tokens_train = tokenizer.batch_encode_plus(
@@ -235,6 +250,11 @@ for lang in ("fr", "it", "en"):
     # dataLoader for train set
     train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=batch_size)
 
+    # dataloader for validation set
+    test_data = TensorDataset(test_seq, test_mask, test_y)
+    test_sampler = RandomSampler(test_data)
+    test_dataloader = DataLoader(test_data, sampler=test_sampler, batch_size=batch_size)
+
     # creating the model and pushing it to gpu
     model = BERT_Arch(bert)
     model = model.to(device)
@@ -250,6 +270,7 @@ for lang in ("fr", "it", "en"):
     valid_losses = []
 
     # for each epoch
+    counter = 0
     for epoch in range(epochs):
         print('\n Epoch {:} / {:}'.format(epoch + 1, epochs))
 
@@ -257,7 +278,13 @@ for lang in ("fr", "it", "en"):
         train_loss, _ = train(train_dataloader, model, optimizer)
 
         # evaluate model
-        # valid_loss, _ = evaluate()
+        valid_loss, _ = validate(test_dataloader, model)
+
+        if valid_loss < best_valid_loss:
+            best_valid_loss = valid_loss
+            counter = 0
+        else:
+            counter += 1
 
         # save the best model
         # if valid_loss < best_valid_loss:
@@ -266,10 +293,14 @@ for lang in ("fr", "it", "en"):
 
         # append training and validation loss
         train_losses.append(train_loss)
-        # valid_losses.append(valid_loss)
+        valid_losses.append(valid_loss)
 
         print(f'\nTraining Loss: {train_loss:.3f}')
-        # print(f'Validation Loss: {valid_loss:.3f}')
+        print(f'Validation Loss: {valid_loss:.3f}')
+
+        # Early stopping
+        if counter >= PATIENCE:
+            break
 
     with torch.no_grad():
         model.eval()
