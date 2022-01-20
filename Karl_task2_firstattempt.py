@@ -4,7 +4,7 @@ Created on Tue Nov  9 10:25:50 2021
 
 @author: karl vetter
 """
-
+import csv
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -106,12 +106,12 @@ def train(train_dataloader, model, optimizer):
     return avg_loss, total_preds
 
 
-def validate(test_dataloader, model):
+def validate(val_dataloader, model):
     model.eval()
     total_loss, total_accuracy = 0, 0
     total_preds = []
     with torch.no_grad():
-        for step, batch in enumerate(test_dataloader):
+        for step, batch in enumerate(val_dataloader):
             batch = [r.to(device) for r in batch]
             sent_id, mask, labels = batch
             labels = (labels - 1) / 6
@@ -126,15 +126,19 @@ def validate(test_dataloader, model):
     return avg_loss, total_preds
 
 
+with open('subtask2_preds.tsv', 'w') as f:
+    writer = csv.writer(f, delimiter="\t")
+    writer.writerow(["ID", "Score"])
+
 for lang in ("en", "it", "fr"):
     torch.cuda.empty_cache()
     data = pd.concat([pd.read_csv(f"data/train/train_subtask-2/{lang}/{lang.capitalize()}-Subtask2-fold_{i}.tsv",
                                   sep="\t") for i in range(2)])
-    basedata, testdata = train_test_split(data, test_size=0.3)
+    basedata, valdata = train_test_split(data, test_size=0.3)
     print(basedata.head())
     print(np.shape(basedata))
-    print(testdata.head())
-    print(np.shape(testdata))
+    print(valdata.head())
+    print(np.shape(valdata))
 
     # loading the pretrained bert model and tokenizer
     if lang == "en":
@@ -158,8 +162,8 @@ for lang in ("en", "it", "fr"):
         truncation=True
     )
 
-    tokens_test = tokenizer.batch_encode_plus(
-        testdata.Sentence.tolist(),
+    tokens_val = tokenizer.batch_encode_plus(
+        valdata.Sentence.tolist(),
         max_length=maxlength,
         padding='max_length',
         truncation=True
@@ -170,9 +174,9 @@ for lang in ("en", "it", "fr"):
     train_mask = torch.tensor(tokens_train['attention_mask'])
     train_y = torch.tensor(basedata.Score.tolist())
 
-    test_seq = torch.tensor(tokens_test['input_ids'])
-    test_mask = torch.tensor(tokens_test['attention_mask'])
-    test_y = torch.tensor(testdata.Score.tolist())
+    val_seq = torch.tensor(tokens_val['input_ids'])
+    val_mask = torch.tensor(tokens_val['attention_mask'])
+    val_y = torch.tensor(valdata.Score.tolist())
 
     # define a batch size
     batch_size = 32
@@ -184,9 +188,9 @@ for lang in ("en", "it", "fr"):
     train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=batch_size)
 
     # dataloader for validation set
-    test_data = TensorDataset(test_seq, test_mask, test_y)
-    test_sampler = RandomSampler(test_data)
-    test_dataloader = DataLoader(test_data, sampler=test_sampler, batch_size=batch_size)
+    val_data = TensorDataset(val_seq, val_mask, val_y)
+    val_sampler = RandomSampler(val_data)
+    val_dataloader = DataLoader(val_data, sampler=val_sampler, batch_size=batch_size)
 
     # creating the model and pushing it to gpu
     model = BERT_Arch(bert)
@@ -211,7 +215,7 @@ for lang in ("en", "it", "fr"):
         train_loss, _ = train(train_dataloader, model, optimizer)
 
         # evaluate model
-        valid_loss, _ = validate(test_dataloader, model)
+        valid_loss, _ = validate(val_dataloader, model)
 
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
@@ -230,16 +234,39 @@ for lang in ("en", "it", "fr"):
         if counter >= PATIENCE:
             break
 
+    testdata = pd.read_csv(f"data/test/official_test_sets/subtask-2/{lang.capitalize()}-Subtask2-test.tsv", sep="\t")
+    # running the tokenizer
+    tokens_test = tokenizer.batch_encode_plus(
+        testdata.Sentence.tolist(),
+        max_length=maxlength,
+        padding='max_length',
+        truncation=True
+    )
+
+    test_seq = torch.tensor(tokens_test['input_ids'])
+    test_mask = torch.tensor(tokens_test['attention_mask'])
+
     with torch.no_grad():
         model.eval()
-        preds_test = model(test_seq.to(device), test_mask.to(device))
+        preds_test = model(val_seq.to(device), val_mask.to(device))
         preds_test = preds_test.detach().cpu().numpy()
         preds_test = (preds_test * 6) + 1
-        # print(preds_test)
-    mse = mean_squared_error(test_y, preds_test)
-    rmse = mean_squared_error(test_y, preds_test, squared=False)
-    rho, pval = stats.spearmanr(test_y, preds_test)
+        preds_test = [round(pred[0], 2) for pred in preds_test]
 
-    print(f"mse: {mse}")
-    print(f"rmse: {rmse}")
-    print(f"rho: {rho}")
+    with open('subtask2_preds.tsv', 'a') as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerows(zip(testdata.ID.tolist(), preds_test))
+
+    # with torch.no_grad():
+    #     model.eval()
+    #     preds_test = model(val_seq.to(device), val_mask.to(device))
+    #     preds_test = preds_test.detach().cpu().numpy()
+    #     preds_test = (preds_test * 6) + 1
+    #     # print(preds_test)
+    # mse = mean_squared_error(val_y, preds_test)
+    # rmse = mean_squared_error(val_y, preds_test, squared=False)
+    # rho, pval = stats.spearmanr(val_y, preds_test)
+    #
+    # print(f"mse: {mse}")
+    # print(f"rmse: {rmse}")
+    # print(f"rho: {rho}")
