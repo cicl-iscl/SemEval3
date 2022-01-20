@@ -4,6 +4,7 @@ Created on Tue Nov  9 10:25:50 2021
 
 @author: karl vetter
 """
+import csv
 
 import pandas as pd
 import numpy as np
@@ -119,6 +120,7 @@ for lang in ("fr", "it", "en"):
     outputstorage = np.zeros((3, 5))
 
     torch.cuda.empty_cache()
+
     data = pd.concat([pd.read_csv(f"data/train/train_subtask-1/{lang}/{lang.capitalize()}-Subtask1-fold_{i}.tsv",
                                   sep="\t") for i in range(3)])
     basedata, testdata = train_test_split(data, test_size=0.3)
@@ -140,6 +142,7 @@ for lang in ("fr", "it", "en"):
         bert = AutoModel.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
         tokenizer = BertTokenizerFast.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
         maxlength = MAXLENGTH_IT
+
 
     # running the tokenizer
     tokens_train = tokenizer.batch_encode_plus(
@@ -221,14 +224,37 @@ for lang in ("fr", "it", "en"):
         if counter >= PATIENCE:
             break
 
+    data_test = pd.read_csv(f"data/test/official_test_sets/subtask-1/{lang.capitalize()}-Subtask1-test.tsv", sep="\t")
+    # running the tokenizer
+    tokens_data_test = tokenizer.batch_encode_plus(
+        data_test.Sentence.tolist(),
+        max_length=maxlength,
+        padding='max_length',
+        truncation=True
+    )
+
+    data_test_seq = torch.tensor(tokens_data_test['input_ids'])
+    data_test_mask = torch.tensor(tokens_data_test['attention_mask'])
+
+    print(tokens_data_test, data_test_seq, data_test_mask)
+
+
     with torch.no_grad():
+        torch.cuda.empty_cache()
         model.eval()
-        preds_test = model(test_seq.to(device), test_mask.to(device))
+        preds_test = model(data_test_seq.to(device), data_test_mask.to(device))
         preds_test = preds_test.detach().cpu().numpy()
+        # preds_test = model(data_test_seq, data_test_mask)
+        # preds_test = preds_test.numpy()
 
     preds_test = np.argmax(preds_test, axis=1)
 
-    accuracy = accuracy_score(test_y, preds_test)
+    with open('answer.tsv', 'a') as f:
+        f.write("ID\tLabels")
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerows(zip(data_test.ID.tolist(), preds_test))
+
+    """accuracy = accuracy_score(test_y, preds_test)
     precision = precision_score(test_y, preds_test)
     recall = recall_score(test_y, preds_test)
     f1 = f1_score(test_y, preds_test, average='binary')
@@ -238,4 +264,4 @@ for lang in ("fr", "it", "en"):
     print(f"Precision: {precision}")
     print(f"Recall: {recall}")
     print(f"F1 (micro): {f1}")
-    print(f"F1 (macro): {f1macro}")
+    print(f"F1 (macro): {f1macro}")"""
