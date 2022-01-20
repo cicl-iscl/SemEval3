@@ -116,18 +116,20 @@ def validate(test_dataloader, model):
     return avg_loss, total_preds
 
 
-for lang in ("fr", "it", "en"):
-    outputstorage = np.zeros((3, 5))
+with open('subtask1_preds.tsv', 'w') as f:
+    writer = csv.writer(f, delimiter="\t")
+    writer.writerow(["ID", "Labels"])
 
+for lang in ("fr", "it", "en"):
     torch.cuda.empty_cache()
 
     data = pd.concat([pd.read_csv(f"data/train/train_subtask-1/{lang}/{lang.capitalize()}-Subtask1-fold_{i}.tsv",
                                   sep="\t") for i in range(3)])
-    basedata, testdata = train_test_split(data, test_size=0.3)
+    basedata, valdata = train_test_split(data, test_size=0.3)
     print(basedata.head())
     print(np.shape(basedata))
-    print(testdata.head())
-    print(np.shape(testdata))
+    print(valdata.head())
+    print(np.shape(valdata))
 
     # loading the pretrained bert model and tokenizer
     if lang == "en":
@@ -143,7 +145,6 @@ for lang in ("fr", "it", "en"):
         tokenizer = BertTokenizerFast.from_pretrained('m-polignano-uniba/bert_uncased_L-12_H-768_A-12_italian_alb3rt0')
         maxlength = MAXLENGTH_IT
 
-
     # running the tokenizer
     tokens_train = tokenizer.batch_encode_plus(
         basedata.Sentence.tolist(),
@@ -152,8 +153,8 @@ for lang in ("fr", "it", "en"):
         truncation=True
     )
 
-    tokens_test = tokenizer.batch_encode_plus(
-        testdata.Sentence.tolist(),
+    tokens_val = tokenizer.batch_encode_plus(
+        valdata.Sentence.tolist(),
         max_length=maxlength,
         padding='max_length',
         truncation=True
@@ -164,9 +165,9 @@ for lang in ("fr", "it", "en"):
     train_mask = torch.tensor(tokens_train['attention_mask'])
     train_y = torch.tensor(basedata.Labels.tolist())
 
-    test_seq = torch.tensor(tokens_test['input_ids'])
-    test_mask = torch.tensor(tokens_test['attention_mask'])
-    test_y = torch.tensor(testdata.Labels.tolist())
+    val_seq = torch.tensor(tokens_val['input_ids'])
+    val_mask = torch.tensor(tokens_val['attention_mask'])
+    val_y = torch.tensor(valdata.Labels.tolist())
 
     # define a batch size
     batch_size = 32
@@ -178,9 +179,9 @@ for lang in ("fr", "it", "en"):
     # dataLoader for train set
     train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=batch_size)
 
-    test_data = TensorDataset(test_seq, test_mask, test_y)
-    test_sampler = RandomSampler(test_data)
-    test_dataloader = DataLoader(test_data, sampler=test_sampler, batch_size=batch_size)
+    val_data = TensorDataset(val_seq, val_mask, val_y)
+    val_sampler = RandomSampler(val_data)
+    val_dataloader = DataLoader(val_data, sampler=val_sampler, batch_size=batch_size)
 
     # creating the model and pushing it to gpu
     model = BERT_Arch(bert)
@@ -205,7 +206,7 @@ for lang in ("fr", "it", "en"):
         train_loss, _ = train(train_dataloader, model, optimizer)
 
         # evaluate model
-        valid_loss, _ = validate(test_dataloader, model)
+        valid_loss, _ = validate(val_dataloader, model)
 
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
@@ -224,35 +225,29 @@ for lang in ("fr", "it", "en"):
         if counter >= PATIENCE:
             break
 
-    data_test = pd.read_csv(f"data/test/official_test_sets/subtask-1/{lang.capitalize()}-Subtask1-test.tsv", sep="\t")
+    testdata = pd.read_csv(f"data/test/official_test_sets/subtask-1/{lang.capitalize()}-Subtask1-test.tsv", sep="\t")
     # running the tokenizer
-    tokens_data_test = tokenizer.batch_encode_plus(
-        data_test.Sentence.tolist(),
+    tokens_test = tokenizer.batch_encode_plus(
+        testdata.Sentence.tolist(),
         max_length=maxlength,
         padding='max_length',
         truncation=True
     )
 
-    data_test_seq = torch.tensor(tokens_data_test['input_ids'])
-    data_test_mask = torch.tensor(tokens_data_test['attention_mask'])
-
-    print(tokens_data_test, data_test_seq, data_test_mask)
-
+    test_seq = torch.tensor(tokens_test['input_ids'])
+    test_mask = torch.tensor(tokens_test['attention_mask'])
 
     with torch.no_grad():
         torch.cuda.empty_cache()
         model.eval()
-        preds_test = model(data_test_seq.to(device), data_test_mask.to(device))
+        preds_test = model(test_seq.to(device), test_mask.to(device))
         preds_test = preds_test.detach().cpu().numpy()
-        # preds_test = model(data_test_seq, data_test_mask)
-        # preds_test = preds_test.numpy()
 
     preds_test = np.argmax(preds_test, axis=1)
 
-    with open('answer.tsv', 'a') as f:
-        f.write("ID\tLabels")
+    with open('subtask1_preds.tsv', 'a') as f:
         writer = csv.writer(f, delimiter="\t")
-        writer.writerows(zip(data_test.ID.tolist(), preds_test))
+        writer.writerows(zip(testdata.ID.tolist(), preds_test))
 
     """accuracy = accuracy_score(test_y, preds_test)
     precision = precision_score(test_y, preds_test)
