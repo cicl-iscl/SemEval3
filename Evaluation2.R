@@ -63,7 +63,7 @@ En_Subtask2_scores$Language <- factor(c("en"))
 Fr_Subtask2_scores$Language <- factor(c("fr"))
 It_Subtask2_scores$Language <- factor(c("it"))
 
-answer_task2 <- read_delim("answer_task2.tsv",
+answer_task2 <- read_delim("median_task2.tsv",
                            "\t",
                            escape_double = FALSE,
                            trim_ws = TRUE)
@@ -71,8 +71,7 @@ names(answer_task2)[names(answer_task2) == 'Score'] <- 'Scores'
 
 # Merge dataframes
 subtask2 <- merge(
-    rbind(En_Subtask2_scores, Fr_Subtask2_scores,
-          It_Subtask2_scores),
+    rbind(En_Subtask2_scores, Fr_Subtask2_scores, It_Subtask2_scores),
     answer_task2,
     by = "ID",
     suffixes = c("_gold", "_pred")
@@ -80,28 +79,28 @@ subtask2 <- merge(
 
 # Compute metrics
 for (lang in levels(subtask2$Language)) {
-    mse <- mean((subtask2[subtask2$Language == lang, ]$Scores_gold -
-                     subtask2[subtask2$Language == lang, ]$Scores_pred) ^
-                    2)
+    mse <- mean((subtask2[subtask2$Language == lang,]$Scores_gold -
+                     subtask2[subtask2$Language == lang,]$Scores_pred) ^ 2)
     rmse <- sqrt(mse)
     rho <-
-        cor(subtask2[subtask2$Language == lang, ]$Scores_pred, 
-            subtask2[subtask2$Language == lang, ]$Scores_gold, 
+        cor(subtask2[subtask2$Language == lang,]$Scores_gold,
+            subtask2[subtask2$Language == lang,]$Scores_pred,
             method = "spearman")
     metrics2 <- data.frame(total = c(mse, rmse, rho))
+    print(sprintf("%s: %f", lang, rho))
     for (construction in levels(subtask2$Construction)) {
         mse <-
             mean((subtask2[subtask2$Language == lang &
-                               subtask2$Construction == construction, ]$Scores_gold -
+                               subtask2$Construction == construction,]$Scores_gold -
                       subtask2[subtask2$Language == lang &
-                                   subtask2$Construction == construction, ]$Scores_pred) ^
+                                   subtask2$Construction == construction,]$Scores_pred) ^
                      2)
         rmse <- sqrt(mse)
         rho <-
             cor(subtask2[subtask2$Language == lang &
-                             subtask2$Construction == construction, ]$Scores_gold,
+                             subtask2$Construction == construction,]$Scores_gold,
                 subtask2[subtask2$Language == lang &
-                             subtask2$Construction == construction, ]$Scores_pred,
+                             subtask2$Construction == construction,]$Scores_pred,
                 method = "spearman")
         metrics2[[construction]] <- c(mse, rmse, rho)
     }
